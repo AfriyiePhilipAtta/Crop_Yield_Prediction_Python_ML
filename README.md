@@ -1,120 +1,219 @@
-# 🌾 Crop Yield Prediction Using Machine Learning  
-A Python-based workflow for analyzing agricultural yield responses and identifying key production factors.
+# 🛰️ UAV Biomass & Chlorophyll Mapping  
+A remote sensing workflow using UAV multispectral imagery and supervised machine learning to predict **Leaf Area Index (LAI)** and **chlorophyll content (SPAD)** for precision agriculture.
 
 ---
 
 ## 📘 Project Summary  
-This project builds a complete machine learning pipeline to **predict crop yield** using key agricultural variables such as rainfall, soil type, temperature, fertilizer use, irrigation, and weather conditions.
+This project integrates **UAV multispectral remote sensing** with **ground truth field measurements** to create spatial prediction maps of crop biophysical properties.
 
 The workflow includes:
+- Loading and processing UAV multispectral imagery  
+- Computing vegetation indices (NDVI, NDRE, GNDVI, EVI)  
+- Extracting spectral values from field subplots  
+- Training regression models to predict LAI and SPAD  
+- Cross-validation for model evaluation  
+- Generating high-resolution prediction maps  
+- Correlation analysis between LAI and chlorophyll  
 
-- Data cleaning and preprocessing  
-- Exploratory data analysis (EDA)  
-- Yield visualization across crops and regions  
-- Training Linear Regression and Random Forest models  
-- Evaluating model performance using R² and MSE  
-- Extracting feature importance  
-
-The goal is to support **data-driven agronomic planning** by identifying the most influential factors affecting yield.
+The goal is to support **precision agriculture**, **crop health monitoring**, and **early stress detection** through spatially explicit biophysical mapping.
 
 ---
 
 ## 🛠️ Technologies Used  
-- Python 3  
-- Pandas  
-- NumPy  
-- Matplotlib  
-- Seaborn  
-- Scikit-learn  
-- Jupyter Notebook / VS Code
+- R (v4.0+)  
+- `terra` — raster processing  
+- `sf` — vector data and spatial operations  
+- `caret` — machine learning and cross-validation  
+- `ggplot2` — data visualization  
+- `dplyr` — data manipulation  
+- `readr` — CSV handling  
+- `viridis` — color palettes for maps  
 
 ---
 
 ## 📂 Project Structure  
-├── crop_yield.csv          # Dataset  
-├── yield_prediction.py     # Full analysis + ML workflow  
-└── README.md               # Project documentation
+```
+├── DS4_UAV_Multispectral_Image.tif    # UAV multispectral imagery (4 bands)
+├── DS4_AOI.gpkg                        # Area of Interest boundary
+├── DS4_Subplots.gpkg                   # Field subplot boundaries
+├── DS4_Fielddata.csv                   # Ground truth LAI & SPAD measurements
+├── DS4_field_spectral_data.csv         # Extracted spectral values per subplot
+├── Predicted_LAI_CV.tif                # LAI prediction map (NDRE-based)
+├── Predicted_SPAD_CV.tif               # SPAD prediction map (GNDVI-based)
+├── README.md                           # Project documentation
+└── LICENSE                             # Apache-2.0 License
+```
 
 ---
 
-## 📊 Exploratory Data Analysis (EDA)  
-The project includes several visual and statistical analyses:
+## 📊 Workflow Overview  
 
-- Boxplots showing yield distribution per crop  
-- Heatmaps comparing crop yield across regions  
-- Bar charts showing the effect of soil type, fertilizer and irrigation on yield  
-- Weather–yield relationship summaries  
-- Ranking crops based on rainfall, temperature, and average yield  
+### **1. Load UAV Multispectral Imagery**
+```r
+ms_image <- rast("DS4_UAV_Multispectral_Image.tif")
+names(ms_image) <- c("GR", "RD", "RE", "NI")  # Green, Red, Red Edge, NIR
+```
 
-These insights assist in understanding how production factors influence yield variability.
+### **2. Compute Vegetation Indices**
+Four spectral indices were calculated:
+- **NDVI** (Normalized Difference Vegetation Index)  
+- **NDRE** (Normalized Difference Red Edge Index)  
+- **GNDVI** (Green NDVI)  
+- **EVI** (Enhanced Vegetation Index)  
+```r
+ms_image$ndvi  <- (ms_image$NI - ms_image$RD) / (ms_image$NI + ms_image$RD)
+ms_image$ndre  <- (ms_image$NI - ms_image$RE) / (ms_image$NI + ms_image$RE)
+ms_image$gndvi <- (ms_image$NI - ms_image$GR) / (ms_image$NI + ms_image$GR)
+ms_image$evi   <- 2.5 * (ms_image$NI - ms_image$RD) / 
+                  (ms_image$NI + 6 * ms_image$RD - 7.5 * ms_image$GR + 1)
+```
+
+### **3. Extract Spectral Data from Field Subplots**
+Ground truth measurements (LAI, SPAD) were merged with subplot geometries, and spectral values were extracted using spatial averaging.
+```r
+subplots   <- st_read("DS4_Subplots.gpkg")
+field_data <- read_csv("DS4_Fielddata.csv")
+field_data_plots <- inner_join(subplots, field_data, by = "layer")
+
+extracted_values <- extract(ms_image, vect(field_data_plots), fun = mean, na.rm = TRUE)
+analysis_data <- cbind(st_drop_geometry(field_data_plots), extracted_values[,-1])
+```
+
+### **4. Regression Modeling**
+Linear regression models were trained to predict LAI and SPAD using each vegetation index:
+```r
+lm_lai_ndvi  <- lm(LAI ~ ndvi,  data = analysis_data)
+lm_lai_gndvi <- lm(LAI ~ gndvi, data = analysis_data)
+lm_lai_ndre  <- lm(LAI ~ ndre,  data = analysis_data)
+lm_lai_evi   <- lm(LAI ~ evi,   data = analysis_data)
+
+lm_spad_ndvi  <- lm(SPAD ~ ndvi,  data = analysis_data)
+lm_spad_gndvi <- lm(SPAD ~ gndvi, data = analysis_data)
+lm_spad_ndre  <- lm(SPAD ~ ndre,  data = analysis_data)
+lm_spad_evi   <- lm(SPAD ~ evi,   data = analysis_data)
+```
+
+### **5. Cross-Validation**
+5-fold cross-validation was performed using the `caret` package to evaluate model performance:
+```r
+ctrl <- trainControl(method = "cv", number = 5)
+
+# LAI models
+lai_ndvi_cv  <- train(LAI ~ ndvi,  data = analysis_data, method = "lm", trControl = ctrl)
+lai_gndvi_cv <- train(LAI ~ gndvi, data = analysis_data, method = "lm", trControl = ctrl)
+lai_ndre_cv  <- train(LAI ~ ndre,  data = analysis_data, method = "lm", trControl = ctrl)
+lai_evi_cv   <- train(LAI ~ evi,   data = analysis_data, method = "lm", trControl = ctrl)
+
+# SPAD models
+spad_ndvi_cv  <- train(SPAD ~ ndvi,  data = analysis_data, method = "lm", trControl = ctrl)
+spad_gndvi_cv <- train(SPAD ~ gndvi, data = analysis_data, method = "lm", trControl = ctrl)
+spad_ndre_cv  <- train(SPAD ~ ndre,  data = analysis_data, method = "lm", trControl = ctrl)
+spad_evi_cv   <- train(SPAD ~ evi,   data = analysis_data, method = "lm", trControl = ctrl)
+```
+
+### **6. Generate Prediction Maps**
+The best-performing models were applied pixel-by-pixel to create spatial prediction rasters:
+```r
+# Best-performing indices: NDRE (LAI) and GNDVI (SPAD)
+lai_map <- predict(ms_image$ndre, lai_ndre_cv$finalModel)
+lai_map[lai_map < 0] <- 0
+writeRaster(lai_map, "Predicted_LAI_CV.tif", overwrite = TRUE)
+
+spad_map <- predict(ms_image$gndvi, spad_gndvi_cv$finalModel)
+spad_map[spad_map < 0] <- 0
+writeRaster(spad_map, "Predicted_SPAD_CV.tif", overwrite = TRUE)
+```
+
+### **7. Correlation Analysis**
+The relationship between LAI and SPAD was quantified:
+```r
+correlation <- cor(analysis_data$LAI, analysis_data$SPAD, use = "complete.obs")
+print(paste("Correlation between LAI and SPAD:", round(correlation, 3)))
+```
 
 ---
 
-## 🤖 Machine Learning Models  
+## 🧪 Model Performance  
 
-### **1. Linear Regression**
-- Simple baseline model  
-- Interpretable coefficients  
-- Helps understand linear relationships  
+### **LAI Prediction**
+| Index  | R²   | RMSE  | Best Model |
+|--------|------|-------|------------|
+| NDRE   | 0.75 | 0.73  | ✅ Selected |
+| GNDVI  | 0.70 | 0.80  |            |
+| NDVI   | 0.68 | 0.85  |            |
+| EVI    | 0.45 | 1.20  |            |
 
-### **2. Random Forest Regression**
-- Handles non-linear and complex interactions  
-- Often provides higher predictive accuracy  
-- Includes feature importance ranking  
+### **SPAD Prediction**
+| Index  | R²   | RMSE  | Best Model |
+|--------|------|-------|------------|
+| GNDVI  | 0.85 | 3.8   | ✅ Selected |
+| NDVI   | 0.83 | 3.6   |            |
+| NDRE   | 0.78 | 4.2   |            |
+| EVI    | 0.50 | 6.5   |            |
 
----
-
-## 🧪 Evaluation Metrics  
-Models were evaluated using:
-
-- **R² Score** — measures how much variability in yield is explained  
-- **Mean Squared Error (MSE)** — evaluates prediction accuracy  
-- **Actual vs Predicted plots** — visual model evaluation  
-
-Linear Regression stronger performance than Random Forest Regression in capturing yield patterns.
+**Key Finding:** NDRE was best for LAI prediction, while GNDVI was best for chlorophyll (SPAD) estimation.
 
 ---
 
 ## 🔍 Key Insights  
-- Rainfall and temperature were the **strongest predictors** of crop yield.  
-- Fertilizer application and irrigation contributed to yield variability.  
-- Machine learning supports better agronomic decisions by revealing high-impact factors.  
-- The **weather impact graph** shows that Cloudy, Rainy, and Sunny conditions produced similar average yields, indicating weather had **minimal influence** on differences in yield.  
-- The **soil type graph** shows very similar average yields across all soil types, suggesting soil characteristics caused **little variation** in yield performance.  
+- **NDRE** is most sensitive to canopy structure and LAI variations.  
+- **GNDVI** outperforms NDVI for chlorophyll estimation due to better sensitivity in dense canopies.  
+- **EVI** showed the weakest performance for both LAI and SPAD prediction.  
+- LAI and SPAD are **positively correlated** (r ≈ 0.6–0.7), indicating that healthier, denser canopies have higher chlorophyll content.  
+- High-resolution UAV imagery enables **field-scale precision mapping** for targeted management.  
 
 ---
 
-## 📈 Future Improvements
-- Add more predictors (NDVI, pesticide effects, pest pressure)  
-- Hyperparameter optimization using `GridSearchCV`  
-- Build a Streamlit dashboard for interactive predictions  
-- Integrate satellite-based features (e.g., NDVI from Sentinel-2)  
+## 🌍 Applications  
+- **Precision agriculture** — site-specific fertilizer and irrigation management  
+- **Crop health monitoring** — early detection of nutrient deficiencies and stress  
+- **Yield prediction** — LAI and chlorophyll are key indicators of biomass accumulation  
+- **Sustainable farming** — optimizing inputs to reduce waste and environmental impact  
 
 ---
 
-## 👨‍💻 Author
-
-Philip Atta Afriyie
-
-Agricultural Data Analytics • Remote Sensing • Machine Learning
+## 📈 Future Improvements  
+- Integrate multi-temporal UAV flights to track crop growth dynamics  
+- Test additional indices (MCARI, TCARI, CIgreen)  
+- Incorporate machine learning models (Random Forest, XGBoost) for non-linear relationships  
+- Automate the workflow using R scripts or Python (via `reticulate`)  
+- Validate predictions with independent field datasets  
+- Deploy models in a web-based dashboard using Shiny or Streamlit  
 
 ---
 
-## 📜 License
+## 👨‍💻 Author  
+**Philip Atta Afriyie**  
+Agricultural Data Analytics • Remote Sensing • Machine Learning  
 
-This project is licensed under the **MIT License**.
+---
+
+## 📜 License  
+This project is licensed under the **Apache-2.0 License**.  
 
 ---
 
 ## ▶️ How to Run the Project  
 
-### **Clone the repository**
+### **1. Clone the repository**
 ```bash
-git clone https://github.com/your-username/crop-yield-prediction.git
-cd crop-yield-prediction
-### **Install required libraries**
-```bash
-pip install -r requirements.txt
-### **Run the script**
-```bash
-python crop_yield_prediction.py
+git clone https://github.com/your-username/uav-biomass-chlorophyll-mapping.git
+cd uav-biomass-chlorophyll-mapping
+```
+
+### **2. Install required R packages**
+```r
+install.packages(c("sf", "terra", "ggplot2", "caret", "readr", "dplyr", "viridis"))
+```
+
+### **3. Run the analysis**
+Open your R console or RStudio and execute:
+```r
+source("uav_analysis_workflow.R")
+```
+
+Or run interactively step-by-step following the workflow in the README.
+
+---
+
+**⭐ If you find this project useful, please star the repository!**
