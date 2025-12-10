@@ -42,8 +42,7 @@ The goal is to support **data-driven agronomic planning** by identifying the mos
 The project includes several visual and statistical analyses:
 - Boxplots showing yield distribution per crop  
 - Heatmaps comparing crop yield across regions  
-- Bar charts showing the effect of soil type, fertilizer and irrigation on yield  
-- Weather–yield relationship summaries  
+- Bar charts showing the effect of soil type, weather, fertilizer and irrigation on yield  
 - Ranking crops based on rainfall, temperature, and average yield  
 
 These insights assist in understanding how production factors influence yield variability.
@@ -69,8 +68,7 @@ Models were evaluated using:
 - **Mean Squared Error (MSE)** — evaluates prediction accuracy  
 - **Actual vs Predicted plots** — visual model evaluation  
 
-Linear Regression stronger performance than Random Forest Regression in capturing yield patterns.
-
+Linear Regression demonstrates stronger performance than Random Forest Regression in capturing yield patterns.
 ---
 
 ## 🔍 Key Insights  
