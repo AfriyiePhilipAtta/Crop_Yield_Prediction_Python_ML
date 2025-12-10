@@ -69,6 +69,7 @@ Models were evaluated using:
 - **Actual vs Predicted plots** — visual model evaluation  
 
 Linear Regression demonstrates stronger performance than Random Forest Regression in capturing yield patterns.
+
 ---
 
 ## 🔍 Key Insights  
